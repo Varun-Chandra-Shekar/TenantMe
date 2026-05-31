@@ -1,0 +1,41 @@
+# ── Core orchestration ─────────────────────────────────────────────
+langgraph                 # agent state machine / planner
+langchain                 # shared abstractions used by langgraph
+langchain-core
+
+# ── LLM + embedding providers ──────────────────────────────────────
+# Keep ONE of the LLM SDKs depending on which provider you pick.
+anthropic                 # if using Claude
+sentence-transformers     # local embeddings + local cross-encoder reranker (free, CPU)
+
+# ── Vector store (Postgres + pgvector) ─────────────────────────────
+psycopg[binary]           # Postgres driver
+pgvector                  # pgvector python bindings
+sqlalchemy                # optional, convenient for schema/queries
+
+# ── Retrieval helpers ──────────────────────────────────────────────
+rank-bm25                 # keyword/BM25 half of hybrid search
+
+# ── Ingestion / scraping ───────────────────────────────────────────
+httpx                     # polite HTTP fetching
+beautifulsoup4            # parse the AustLII section HTML
+lxml                      # fast parser backend for bs4
+tenacity                  # retry/backoff for polite, resilient fetching
+
+# ── Serving ────────────────────────────────────────────────────────
+fastapi                   # /chat endpoint
+uvicorn[standard]         # ASGI server
+streamlit                 # demo UI
+
+# ── Evaluation ─────────────────────────────────────────────────────
+ragas                     # faithfulness / relevancy / context metrics
+datasets                  # ragas dependency for eval sets
+pandas                    # handling the golden set + results
+
+# ── Monitoring / tracing ───────────────────────────────────────────
+langfuse                  # tracing, cost, latency, drift
+
+# ── Config + dev ───────────────────────────────────────────────────
+python-dotenv             # load .env
+pydantic                  # tool input/output schemas
+pytest                    # used by the CI eval gate
