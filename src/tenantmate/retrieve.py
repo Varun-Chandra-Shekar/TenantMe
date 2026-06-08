@@ -2,7 +2,7 @@
 
 import os
 from typing import Optional
-import psycopg
+import psycopgs
 from pgvector.psycopg import register_vector
 from sentence_transformers import SentenceTransformer
 import warnings
