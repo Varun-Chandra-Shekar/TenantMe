@@ -13,7 +13,14 @@ from pathlib import Path
 from statistics import mean
 from dotenv import load_dotenv
 load_dotenv()
-from tenantmate.retrieve import search
+from tenantmate.retrieve import search, search_bm25, search_hybrid, search_hybrid_rewritten
+
+RETRIEVERS = {
+    "dense": search,
+    "bm25": search_bm25,
+    "hybrid": search_hybrid,
+    "hybrid_rewritten": search_hybrid_rewritten,
+}
 
 
 GOLDEN_PATH = Path("data/eval/golden_set.jsonl")
@@ -21,16 +28,18 @@ OUT_DIR = Path("data/eval/results")
 K = 5
 
 
-def evaluate(stage: str):
+def evaluate(stage: str, retriever_name: str = "dense"):
+    retriever_fn = RETRIEVERS[retriever_name]
     queries = [json.loads(line) for line in open(GOLDEN_PATH)]
     print(f"Loaded {len(queries)} queries from {GOLDEN_PATH}")
+    print(f"Retriever: {retriever_name}")
 
     results = []
     latencies = []
 
     for q in queries:
         t0 = time.perf_counter()
-        hits = search(q["query"], k=K)
+        hits = retriever_fn(q["query"], k=K)
         elapsed = time.perf_counter() - t0
         latencies.append(elapsed)
 
@@ -94,6 +103,7 @@ def evaluate(stage: str):
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "stage": stage,
         "config": {
+            "retriever": retriever_name,
             "embedding_model": "BAAI/bge-small-en-v1.5",
             "k": K,
             "vector_store": "pgvector (cosine)",
@@ -138,7 +148,7 @@ def evaluate(stage: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", default="week1_baseline",
-                        help="Label for this run (e.g. week1_baseline, week2_hybrid, week2_rerank)")
+    parser.add_argument("--stage", default="week1_baseline")
+    parser.add_argument("--retriever", default="dense", choices=list(RETRIEVERS.keys()))
     args = parser.parse_args()
-    evaluate(args.stage)
+    evaluate(args.stage, args.retriever)
