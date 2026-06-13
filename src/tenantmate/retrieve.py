@@ -8,7 +8,10 @@ from sentence_transformers import SentenceTransformer
 import warnings
 warnings.filterwarnings("ignore", category=Warning)
 from anthropic import Anthropic
+from sentence_transformers import CrossEncoder
+
 _anthropic_client = None
+_RERANKER: Optional[CrossEncoder] = None
 
 def _get_anthropic():
     global _anthropic_client
@@ -39,7 +42,6 @@ Rewrite: rental bond claim payment tenant
 User: What grounds does a landlord need to evict me?
 Rewrite: grounds for termination notice landlord"""
 
-
 def rewrite_query(query: str) -> str:
     """Rewrite a user's plain-English query into corpus-aligned legal terms."""
     client = _get_anthropic()
@@ -51,7 +53,6 @@ def rewrite_query(query: str) -> str:
     )
     return response.content[0].text.strip()
 
-
 # Load model once at import time (not per-query)
 _MODEL: Optional[SentenceTransformer] = None
 
@@ -60,7 +61,6 @@ def _get_model() -> SentenceTransformer:
     if _MODEL is None:
         _MODEL = SentenceTransformer("BAAI/bge-small-en-v1.5")
     return _MODEL
-
 
 def search(query: str, k: int = 5) -> list[dict]:
     """
@@ -97,7 +97,6 @@ def search(query: str, k: int = 5) -> list[dict]:
         }
         for r in rows
     ]
-
 
 """
 Seach function - the concept of BM25
@@ -170,12 +169,47 @@ def search_hybrid(query: str, k: int = 5, candidates: int = 20, rrf_k: int = 60)
         for cid in ranked_ids
     ]
 
-
 def search_hybrid_rewritten(query: str, k: int = 5, candidates: int = 20, rrf_k: int = 60) -> list[dict]:
     """Hybrid retrieval with LLM query rewriting upfront."""
     rewritten = rewrite_query(query)
     results = search_hybrid(rewritten, k=k, candidates=candidates, rrf_k=rrf_k)
     # Attach the rewritten query so callers (and eval) can inspect it
+    for r in results:
+        r["original_query"] = query
+        r["rewritten_query"] = rewritten
+    return results
+
+def _get_reranker() -> CrossEncoder:
+    global _RERANKER
+    if _RERANKER is None:
+        _RERANKER = CrossEncoder("BAAI/bge-reranker-base")
+    return _RERANKER
+
+def rerank(query: str, candidates: list[dict], top_k: int = 5) -> list[dict]:
+    """Re-score (query, chunk) pairs with a cross-encoder, return top_k."""
+    if not candidates:
+        return []
+
+    reranker = _get_reranker()
+    pairs = [[query, c["text"]] for c in candidates]
+    scores = reranker.predict(pairs)
+
+    # Attach scores and sort descending
+    for c, s in zip(candidates, scores):
+        c["rerank_score"] = float(s)
+
+    return sorted(candidates, key=lambda c: c["rerank_score"], reverse = True)[:top_k]
+
+def search_hybrid_rerank(query: str, k: int = 5, candidates: int = 20) -> list[dict]:
+    """Hybrid retrieve a wider pool, then cross-encoder rerank to top-k."""
+    pool = search_hybrid(query, k=candidates, candidates=candidates)
+    return rerank(query, pool, top_k=k)
+
+def search_full(query: str, k: int = 5, candidates: int = 20) -> list[dict]:
+    """The full pipeline: rewrite → hybrid → rerank."""
+    rewritten = rewrite_query(query)
+    pool = search_hybrid(rewritten, k=candidates, candidates=candidates)
+    results = rerank(rewritten, pool, top_k=k)
     for r in results:
         r["original_query"] = query
         r["rewritten_query"] = rewritten
