@@ -1,41 +1,39 @@
-# ── Core orchestration ─────────────────────────────────────────────
-langgraph                 # agent state machine / planner
-langchain                 # shared abstractions used by langgraph
-langchain-core
+# Core libs
+python-dotenv
+pydantic
+pytest
+ipykernel
+pandas
+numpy
 
-# ── LLM + embedding providers ──────────────────────────────────────
-# Keep ONE of the LLM SDKs depending on which provider you pick.
-anthropic                 # if using Claude
-sentence-transformers     # local embeddings + local cross-encoder reranker (free, CPU)
+# Anthropic SDK (direct — don't need langchain for /chat)
+anthropic
 
-# ── Vector store (Postgres + pgvector) ─────────────────────────────
-psycopg[binary]           # Postgres driver
-pgvector                  # pgvector python bindings
-sqlalchemy                # optional, convenient for schema/queries
+# Embeddings + reranker
+sentence-transformers
 
-# ── Retrieval helpers ──────────────────────────────────────────────
-rank-bm25                 # keyword/BM25 half of hybrid search
+# Vector store
+psycopg[binary]
+pgvector
+sqlalchemy
 
-# ── Ingestion / scraping ───────────────────────────────────────────
-httpx                     # polite HTTP fetching
-beautifulsoup4            # parse the AustLII section HTML
-lxml                      # fast parser backend for bs4
-tenacity                  # retry/backoff for polite, resilient fetching
+# Ingestion
+pdfplumber
+beautifulsoup4
+lxml
+httpx
+tenacity
 
-# ── Serving ────────────────────────────────────────────────────────
-fastapi                   # /chat endpoint
-uvicorn[standard]         # ASGI server
-streamlit                 # demo UI
+# Serving
+fastapi
+uvicorn[standard]
 
-# ── Evaluation ─────────────────────────────────────────────────────
-ragas                     # faithfulness / relevancy / context metrics
-datasets                  # ragas dependency for eval sets
-pandas                    # handling the golden set + results
+# Eval — pin to known-compatible langchain 0.3.x set
+langchain==0.3.27
+langchain-core==0.3.79
+langchain-community==0.3.21
+langchain-anthropic==0.3.20
+langchain-huggingface==0.1.2
+ragas==0.2.15
+datasets
 
-# ── Monitoring / tracing ───────────────────────────────────────────
-langfuse                  # tracing, cost, latency, drift
-
-# ── Config + dev ───────────────────────────────────────────────────
-python-dotenv             # load .env
-pydantic                  # tool input/output schemas
-pytest                    # used by the CI eval gate

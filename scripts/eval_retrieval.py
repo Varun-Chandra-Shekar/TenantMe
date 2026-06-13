@@ -13,13 +13,17 @@ from pathlib import Path
 from statistics import mean
 from dotenv import load_dotenv
 load_dotenv()
-from tenantmate.retrieve import search, search_bm25, search_hybrid, search_hybrid_rewritten
+from tenantmate.retrieve import (
+    search, search_bm25, search_hybrid, search_hybrid_rewritten,
+    search_hybrid_rerank, search_full,
+)
 
 RETRIEVERS = {
     "dense": search,
     "bm25": search_bm25,
     "hybrid": search_hybrid,
     "hybrid_rewritten": search_hybrid_rewritten,
+    "full": search_full
 }
 
 
