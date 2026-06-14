@@ -13,7 +13,21 @@ services:
       test: ["CMD-SHELL", "pg_isready -U tenantmate"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # NOTE: 'db' is the service name above — Docker's DNS resolves it.
+      # Internal port 5432 (not 5433), because we're inside the Docker network.
+      DATABASE_URL: "postgresql://tenantmate:tenantmate@db:5432/tenantmate"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL_DEV: ${LLM_MODEL_DEV:-claude-haiku-4-5-20251001}
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

@@ -1,64 +1,52 @@
-"""FastAPI app — POST /chat returns a grounded, cited answer."""
+"""FastAPI app — POST /chat returns a grounded, cited answer via the agent."""
 
 import os
-from anthropic import Anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from tenantmate.retrieve import search
+from tenantmate.agent.graph import run_agent
 
 load_dotenv()
 
-app = FastAPI(title="TenantMate", version="0.1.0")
-client = Anthropic()
-
-SYSTEM_PROMPT = """You are TenantMate, an assistant for NSW rental law questions.
-
-Rules:
-1. Answer ONLY from the provided context. If the context does not contain the answer, say so plainly.
-2. Cite every claim with the section number from the context (e.g. "Under s 41…").
-3. Use plain English a tenant can understand.
-4. Always end with this disclaimer: "This is general information, not legal advice."
-"""
+app = FastAPI(title="TenantMate", version="0.2.0")
 
 
 class ChatRequest(BaseModel):
     question: str
-    k: int = 5
 
 
 class ChatResponse(BaseModel):
     answer: str
-    citations: list[str]
+    citations: list[str]            # chunk_ids from retrieval (the Act sections)
+    rule_citations: list[str] = []  # section refs from tools (calculator)
+    tools_used: list[str]
+    tool_results: list[dict] = []   # structured tool outputs for UI consumers
+    hops: int
 
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    chunks = search(req.question, k=req.k)
+    state = run_agent(req.question)
 
-    context = "\n\n".join(
-        f"[{c['chunk_id']}] Section {c['section_number']} — {c['section_title']}\n{c['text']}"
-        for c in chunks
-    )
+    citations = [c["chunk_id"] for c in state["retrieved_chunks"]]
+    tools_used = [t["tool"] for t in state["tool_results"]]
 
-    user_prompt = f"""CONTEXT:
-{context}
-
-QUESTION: {req.question}
-
-Answer using only the context above. Cite section numbers."""
-
-    response = client.messages.create(
-        model=os.getenv("LLM_MODEL_DEV", "claude-haiku-4-5-20251001"),
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
+    # Collect rule citations from every tool that produced them
+    rule_citations: list[str] = []
+    for t in state["tool_results"]:
+        rule_citations.extend(t.get("rule_citations", []))
+    # Deduplicate while preserving order
+    seen = set()
+    rule_citations = [c for c in rule_citations if not (c in seen or seen.add(c))]
 
     return ChatResponse(
-        answer=response.content[0].text,
-        citations=[c["chunk_id"] for c in chunks],
+        answer=state["final_answer"],
+        citations=citations,
+        rule_citations=rule_citations,
+        tools_used=tools_used,
+        tool_results=state["tool_results"],
+        hops=state["hop_count"],
     )
 
 
