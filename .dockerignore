@@ -1,0 +1,31 @@
+# Local Python environments
+venv/
+*.pyc
+__pycache__/
+*.egg-info/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Git and editor metadata
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Secrets — never bake into images
+.env
+*.env
+
+# Things not needed at runtime
+notebooks/
+data/raw/
+tests/
+.DS_Store
+
+# Docker artifacts
+docker-compose.yml
+Dockerfile
+.dockerignore
