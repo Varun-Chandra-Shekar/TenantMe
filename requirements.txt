@@ -35,6 +35,7 @@ langchain-community==0.3.21
 langchain-anthropic==0.3.20
 langchain-huggingface==0.1.2
 langgraph==0.2.76
+langfuse>=2.50.0,<3.0
 ragas==0.2.15
 datasets
 
