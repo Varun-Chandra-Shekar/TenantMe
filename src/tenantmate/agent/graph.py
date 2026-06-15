@@ -14,6 +14,7 @@ from datetime import date
 from typing import TypedDict, Optional
 
 from anthropic import Anthropic
+from langfuse.decorators import observe, langfuse_context
 from langgraph.graph import StateGraph, END
 
 from tenantmate.retrieve import search_full
@@ -43,6 +44,30 @@ def _strip_code_fences(text: str) -> str:
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     return text.strip()
+
+
+def _claude_with_tracing(*, system: str, messages: list, max_tokens: int, name: str):
+    """Call Claude and emit a Langfuse generation span with token usage."""
+    model = os.getenv("LLM_MODEL_DEV", "claude-haiku-4-5-20251001")
+    client = Anthropic()
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=messages,
+    )
+    # Mark the current observation as a generation (since we're inside @observe)
+    langfuse_context.update_current_observation(
+        name=name,
+        model=model,
+        input=messages,
+        output=response.content[0].text,
+        usage={
+            "input": response.usage.input_tokens,
+            "output": response.usage.output_tokens,
+        },
+    )
+    return response
 
 
 # ─── Planner ────────────────────────────────────────────────────────
@@ -105,6 +130,7 @@ def _summarise_state(state: AgentState) -> str:
     return "\n".join(parts)
 
 
+@observe(name="planner_node", as_type="generation")
 def planner_node(state: AgentState) -> dict:
     """Decide the next action by asking the LLM. Bounded by MAX_HOPS."""
     new_hop = state["hop_count"] + 1
@@ -113,13 +139,12 @@ def planner_node(state: AgentState) -> dict:
     if new_hop > MAX_HOPS:
         return {"next_action": "answer", "hop_count": new_hop}
 
-    client = Anthropic()
     summary = _summarise_state(state)
 
-    response = client.messages.create(
-        model=os.getenv("LLM_MODEL_DEV", "claude-haiku-4-5-20251001"),
-        max_tokens=120,
+    response = _claude_with_tracing(
+        name="planner_llm",
         system=PLANNER_PROMPT,
+        max_tokens=120,
         messages=[{"role": "user", "content":
             f"Query: {state['query']}\n\nProgress so far:\n{summary}\n\n"
             "Pick the next action."
@@ -131,6 +156,7 @@ def planner_node(state: AgentState) -> dict:
 
 # ─── Retrieve node ──────────────────────────────────────────────────
 
+@observe(name="retrieve_node")
 def retrieve_node(state: AgentState) -> dict:
     """Run the existing search_full pipeline."""
     chunks = search_full(state["query"], k=5)
@@ -153,13 +179,13 @@ If a field isn't mentioned, use null.
 Return ONLY the JSON. No prose, no markdown fences."""
 
 
+@observe(name="calculator_node", as_type="generation")
 def calculator_node(state: AgentState) -> dict:
     """Extract dates from the query, call the calculator, attach the result."""
-    client = Anthropic()
-    response = client.messages.create(
-        model=os.getenv("LLM_MODEL_DEV", "claude-haiku-4-5-20251001"),
-        max_tokens=200,
+    response = _claude_with_tracing(
+        name="calculator_date_extraction",
         system=CALC_EXTRACT_PROMPT,
+        max_tokens=200,
         messages=[{"role": "user", "content": state["query"]}],
     )
     raw = response.content[0].text
@@ -168,13 +194,11 @@ def calculator_node(state: AgentState) -> dict:
     try:
         params = json.loads(cleaned)
     except json.JSONDecodeError:
-        # Include the raw response so the next debugger can see what came back.
         return {"tool_results": state["tool_results"] + [
             {"tool": "rent_calculator",
              "error": f"Could not parse dates. LLM returned: {raw[:200]}"}
         ]}
 
-    # Best-effort: only call the calculator if we have the minimum fields.
     if not (params.get("notice_date")
             and params.get("increase_takes_effect_on")
             and params.get("tenancy_start_date")):
@@ -212,10 +236,9 @@ End with: "This is general information, not legal advice."
 """
 
 
+@observe(name="answer_node", as_type="generation")
 def answer_node(state: AgentState) -> dict:
     """Compose the final grounded answer."""
-    client = Anthropic()
-
     context_blob = "\n\n".join(
         f"[{c['chunk_id']}] {c.get('section_title','')} — {c['text']}"
         for c in state["retrieved_chunks"]
@@ -224,10 +247,10 @@ def answer_node(state: AgentState) -> dict:
     tool_blob = json.dumps(state["tool_results"], indent=2, default=str) \
         if state["tool_results"] else "(no tool results)"
 
-    response = client.messages.create(
-        model=os.getenv("LLM_MODEL_DEV", "claude-haiku-4-5-20251001"),
-        max_tokens=600,
+    response = _claude_with_tracing(
+        name="answer_llm",
         system=ANSWER_PROMPT,
+        max_tokens=600,
         messages=[{"role": "user", "content":
             f"QUESTION: {state['query']}\n\n"
             f"RETRIEVED LAW:\n{context_blob}\n\n"
@@ -267,7 +290,6 @@ def build_graph():
         "answer": "answer",
     })
 
-    # After any tool, loop back to the planner.
     g.add_edge("retrieve", "planner")
     g.add_edge("calculator", "planner")
     g.add_edge("answer", END)
@@ -286,6 +308,7 @@ def get_graph():
 
 # ─── Public entry point ─────────────────────────────────────────────
 
+@observe(name="run_agent")
 def run_agent(query: str) -> dict:
     """Run the agent end to end. Returns the final state."""
     graph = get_graph()
@@ -297,4 +320,7 @@ def run_agent(query: str) -> dict:
         final_answer=None,
         hop_count=0,
     )
-    return graph.invoke(initial)
+    result = graph.invoke(initial)
+    # Ensure traces are flushed before the process exits in CLI smoke tests
+    langfuse_context.flush()
+    return result
