@@ -4,12 +4,21 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from tenantmate.agent.graph import run_agent
 
 load_dotenv()
 
 app = FastAPI(title="TenantMate", version="0.2.0")
+STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
+
+@app.get("/")
+def root():
+    return FileResponse(STATIC_DIR / "index.html")
+
 
 
 class ChatRequest(BaseModel):
