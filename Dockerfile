@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # trigger a full reinstall of deps every build
 COPY requirements.txt pyproject.toml ./
 COPY src ./src
+COPY static ./static
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \

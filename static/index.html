@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TenantMate — NSW Rental Law Assistant</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: #f8f9fb;
+      color: #1a1a1a;
+      line-height: 1.5;
+    }
+    .container { max-width: 760px; margin: 0 auto; padding: 32px 16px 120px; }
+    header { margin-bottom: 24px; }
+    h1 { font-size: 28px; margin-bottom: 6px; }
+    .subtitle { color: #666; font-size: 14px; }
+    .examples { margin: 20px 0; }
+    .examples h3 { font-size: 13px; color: #666; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .example-btn {
+      display: inline-block;
+      padding: 8px 12px;
+      margin: 4px 4px 4px 0;
+      background: white;
+      border: 1px solid #e1e4e8;
+      border-radius: 16px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.15s;
+    }
+    .example-btn:hover { background: #f0f2f5; border-color: #ccc; }
+    .messages { margin: 24px 0; }
+    .msg { margin-bottom: 20px; padding: 16px; border-radius: 8px; }
+    .msg-user { background: #e8f0fe; }
+    .msg-assistant { background: white; border: 1px solid #e1e4e8; }
+    .msg-label { font-size: 12px; color: #666; margin-bottom: 8px; font-weight: 600; }
+    .msg-content { white-space: pre-wrap; }
+    .msg-content h2, .msg-content h3 { margin: 12px 0 6px; font-size: 16px; }
+    .msg-content strong { font-weight: 600; }
+    .meta { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; font-size: 13px; }
+    .meta details { margin: 4px 0; }
+    .meta summary { cursor: pointer; color: #555; padding: 4px 0; }
+    .meta-content { padding: 8px 0 8px 16px; }
+    .citation { display: inline-block; font-family: monospace; font-size: 12px; background: #f0f2f5; padding: 2px 6px; border-radius: 4px; margin: 2px; }
+    .tool-result { background: #f0f9ff; padding: 8px; border-radius: 4px; margin-top: 4px; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+    .tool-error { background: #fff5f5; color: #c92a2a; }
+    .latency { font-size: 12px; color: #888; margin-top: 8px; }
+    .input-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: white;
+      border-top: 1px solid #e1e4e8;
+      padding: 12px 16px;
+    }
+    .input-inner { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
+    #question {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    #send {
+      padding: 10px 20px;
+      background: #1a1a1a;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    #send:hover { background: #333; }
+    #send:disabled { background: #aaa; cursor: not-allowed; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #1a1a1a; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .disclaimer { font-size: 12px; color: #999; margin-top: 24px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🏠 TenantMate</h1>
+      <p class="subtitle">Ask a question about NSW residential tenancy law. Answers cite sections of the Act.</p>
+    </header>
+
+    <div class="examples">
+      <h3>Try asking</h3>
+      <button class="example-btn" onclick="askExample(this)">How much notice for a rent increase in NSW?</button>
+      <button class="example-btn" onclick="askExample(this)">Can the landlord enter without telling me?</button>
+      <button class="example-btn" onclick="askExample(this)">How do I get my rental bond back?</button>
+      <button class="example-btn" onclick="askExample(this)">Can I keep a pet in my rental?</button>
+      <button class="example-btn" onclick="askExample(this)">My tenancy started 1 March 2024. The landlord gave notice on 1 May 2026 that rent goes from $600 to $680 from 1 June 2026. The last increase was 1 December 2025. Is this allowed?</button>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <p class="disclaimer">This is general information, not legal advice.</p>
+  </div>
+
+  <div class="input-bar">
+    <div class="input-inner">
+      <input id="question" type="text" placeholder="Ask a question…" />
+      <button id="send" onclick="ask()">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('question');
+    const sendBtn = document.getElementById('send');
+
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') ask();
+    });
+
+    function askExample(btn) {
+      inputEl.value = btn.textContent;
+      ask();
+    }
+
+    async function ask() {
+      const question = inputEl.value.trim();
+      if (!question) return;
+
+      inputEl.value = '';
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = '<span class="spinner"></span>';
+
+      // Render user message
+      const userDiv = document.createElement('div');
+      userDiv.className = 'msg msg-user';
+      userDiv.innerHTML = `<div class="msg-label">YOU</div><div class="msg-content"></div>`;
+      userDiv.querySelector('.msg-content').textContent = question;
+      messagesEl.appendChild(userDiv);
+
+      // Placeholder for assistant message
+      const aDiv = document.createElement('div');
+      aDiv.className = 'msg msg-assistant';
+      aDiv.innerHTML = `<div class="msg-label">TENANTMATE</div><div class="msg-content">Thinking…</div>`;
+      messagesEl.appendChild(aDiv);
+      aDiv.scrollIntoView({ behavior: 'smooth' });
+
+      const t0 = Date.now();
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const ms = Date.now() - t0;
+
+        aDiv.querySelector('.msg-content').innerHTML = renderMarkdown(data.answer);
+
+        // Metadata
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.innerHTML = renderMeta(data, ms);
+        aDiv.appendChild(meta);
+
+      } catch (err) {
+        aDiv.querySelector('.msg-content').textContent = `Something went wrong: ${err.message}`;
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+      }
+    }
+
+    function renderMarkdown(md) {
+      // Tiny markdown subset: **bold**, *italic*, ## h2, line breaks
+      let s = md
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/\n/g, '<br>');
+      return s;
+    }
+
+    function renderMeta(data, latencyMs) {
+      const parts = [];
+
+      if (data.citations && data.citations.length) {
+        const cites = data.citations.map(c => `<span class="citation">${c}</span>`).join('');
+        parts.push(`
+          <details>
+            <summary>📋 ${data.citations.length} citations</summary>
+            <div class="meta-content">${cites}</div>
+          </details>`);
+      }
+
+      if (data.rule_citations && data.rule_citations.length) {
+        const rules = data.rule_citations.map(r => `<div>• ${r}</div>`).join('');
+        parts.push(`
+          <details>
+            <summary>⚖️ ${data.rule_citations.length} rules</summary>
+            <div class="meta-content">${rules}</div>
+          </details>`);
+      }
+
+      if (data.tool_results && data.tool_results.length) {
+        const tools = data.tool_results.map(t => {
+          if (t.error) {
+            return `<div class="tool-result tool-error"><strong>${t.tool}</strong>\n${t.error}</div>`;
+          }
+          const { tool, ...rest } = t;
+          return `<div class="tool-result"><strong>${tool}</strong>\n${JSON.stringify(rest, null, 2)}</div>`;
+        }).join('');
+        parts.push(`
+          <details open>
+            <summary>🔧 ${data.tool_results.length} tools</summary>
+            <div class="meta-content">${tools}</div>
+          </details>`);
+      }
+
+      parts.push(`<div class="latency">⏱ ${data.hops} hops · ${latencyMs} ms</div>`);
+      return parts.join('');
+    }
+  </script>
+</body>
+</html>
